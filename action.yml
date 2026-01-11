@@ -2,141 +2,152 @@ name: "Mirror repository to alternate git host"
 description: "Push --all and --tags to a target SSH remote (e.g. Codeberg). Includes a tidy job summary."
 author: "Alicia Sykes (lissy93)"
 branding:
-  icon: "send"
-  color: "blue"
+    icon: "send"
+    color: "blue"
 
 inputs:
-  ssh_key:
-    description: "SSH private key with write access to the target repo"
-    required: true
-  host:
-    description: "SSH host (e.g. git@codeberg.org)"
-    default: "git@codeberg.org"
-    required: false
-  user:
-    description: "Target user/org. Default = caller's repo owner"
-    required: false
-    default: ""
-  repo:
-    description: "Target repo name. Default = caller's repo name"
-    required: false
-    default: ""
-  force_push:
-    description: "Force push to overwrite remote history (use with caution)"
-    required: false
-    default: "false"
+    ssh_key:
+        description: "SSH private key with write access to the target repo"
+        required: true
+    host:
+        description: "SSH host (e.g. git@codeberg.org)"
+        default: "git@codeberg.org"
+        required: false
+    user:
+        description: "Target user/org. Default = caller's repo owner"
+        required: false
+        default: ""
+    repo:
+        description: "Target repo name. Default = caller's repo name"
+        required: false
+        default: ""
+    force_push:
+        description: "Force push to overwrite remote history (use with caution)"
+        required: false
+        default: "false"
+
+outputs:
+    target_url:
+        description: "The target repository URL"
+        value: ${{ steps.mirror.outputs.target_url }}
+    success:
+        description: "Whether the mirror operation succeeded"
+        value: ${{ steps.mirror.outcome == 'success' }}
 
 runs:
-  using: "composite"
-  steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+    using: "composite"
+    steps:
+        - name: Checkout
+          uses: actions/checkout@v4
+          with:
+              fetch-depth: 0
 
-    - name: Mirror
-      id: mirror
-      shell: bash
-      env:
-        SSH_KEY: ${{ inputs.ssh_key }}
-      run: |
-        set -euo pipefail
-        LOG="$RUNNER_TEMP/mirror.log"
+        - name: Mirror
+          id: mirror
+          shell: bash
+          env:
+              SSH_KEY: ${{ inputs.ssh_key }}
+          run: |
+              set -euo pipefail
+              LOG="$RUNNER_TEMP/mirror.log"
 
-        # Input validation
-        if [ -z "$SSH_KEY" ]; then
-          echo "ERROR: ssh_key input is required" | tee "$LOG"
-          exit 1
-        fi
+              # Input validation
+              if [ -z "$SSH_KEY" ]; then
+                echo "ERROR: ssh_key input is required" | tee "$LOG"
+                exit 1
+              fi
 
-        if ! printf '%s' "$SSH_KEY" | grep -q "BEGIN.*PRIVATE KEY"; then
-          echo "ERROR: ssh_key does not appear to be a valid SSH private key" | tee "$LOG"
-          exit 1
-        fi
+              if ! printf '%s' "$SSH_KEY" | grep -q "BEGIN.*PRIVATE KEY"; then
+                echo "ERROR: ssh_key does not appear to be a valid SSH private key" | tee "$LOG"
+                exit 1
+              fi
 
-        # Defaults: derive owner and repo from caller's context
-        REPO_IN="${{ inputs.repo }}"
-        REPO="${REPO_IN:-${GITHUB_REPOSITORY##*/}}"
+              # Defaults: derive owner and repo from caller's context
+              REPO_IN="${{ inputs.repo }}"
+              REPO="${REPO_IN:-${GITHUB_REPOSITORY##*/}}"
 
-        USER_IN="${{ inputs.user }}"
-        USER="${USER_IN:-${GITHUB_REPOSITORY%/*}}"
+              USER_IN="${{ inputs.user }}"
+              USER="${USER_IN:-${GITHUB_REPOSITORY%/*}}"
 
-        TARGET="${{ inputs.host }}:${USER}/${REPO}.git"
+              TARGET="${{ inputs.host }}:${USER}/${REPO}.git"
 
-        # Derive plain host for known_hosts (handles ssh://git@host:port)
-        HOST="${{ inputs.host }}"
-        HOST="${HOST#*://}"; HOST="${HOST#*@}"; HOST="${HOST%%:*}"
+              # Derive plain host for known_hosts (handles ssh://git@host:port)
+              HOST="${{ inputs.host }}"
+              HOST="${HOST#*://}"; HOST="${HOST#*@}"; HOST="${HOST%%:*}"
 
-        if [ -z "$HOST" ]; then
-          echo "ERROR: Could not parse host from: ${{ inputs.host }}" | tee "$LOG"
-          exit 1
-        fi
+              if [ -z "$HOST" ]; then
+                echo "ERROR: Could not parse host from: ${{ inputs.host }}" | tee "$LOG"
+                exit 1
+              fi
 
-        # Setup SSH with unique key location to avoid conflicts
-        SSH_KEY_PATH="$RUNNER_TEMP/mirror_ssh_$$"
-        mkdir -p ~/.ssh
-        printf '%s' "$SSH_KEY" > "$SSH_KEY_PATH"
-        chmod 600 "$SSH_KEY_PATH"
+              # Setup SSH with unique key location to avoid conflicts
+              SSH_KEY_PATH="$RUNNER_TEMP/mirror_ssh_$$"
+              mkdir -p ~/.ssh
+              printf '%s' "$SSH_KEY" > "$SSH_KEY_PATH"
+              chmod 600 "$SSH_KEY_PATH"
 
-        # Scan host keys securely - fail if unable to verify
-        echo "Scanning SSH host keys for: $HOST" | tee "$LOG"
-        if ! ssh-keyscan -H "$HOST" 2>&1 | tee -a "$LOG" >> ~/.ssh/known_hosts; then
-          echo "ERROR: Failed to retrieve SSH host keys from $HOST" | tee -a "$LOG"
-          exit 1
-        fi
+              # Scan host keys securely - fail if unable to verify
+              echo "Scanning SSH host keys for: $HOST" | tee "$LOG"
+              if ! ssh-keyscan -H "$HOST" 2>&1 | tee -a "$LOG" >> ~/.ssh/known_hosts; then
+                echo "ERROR: Failed to retrieve SSH host keys from $HOST" | tee -a "$LOG"
+                exit 1
+              fi
 
-        # Configure git to use our SSH key
-        export GIT_SSH_COMMAND="ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=yes"
+              # Configure git to use our SSH key
+              export GIT_SSH_COMMAND="ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=yes"
 
-        # Setup force flag if enabled
-        FORCE_FLAG=""
-        if [ "${{ inputs.force_push }}" = "true" ]; then
-          FORCE_FLAG="--force"
-          echo "⚠️  Force push enabled - remote history may be overwritten" | tee -a "$LOG"
-        fi
+              # Setup force flag if enabled
+              FORCE_FLAG=""
+              if [ "${{ inputs.force_push }}" = "true" ]; then
+                FORCE_FLAG="--force"
+                echo "⚠️  Force push enabled - remote history may be overwritten" | tee -a "$LOG"
+              fi
 
-        {
-          git remote add mirror "$TARGET" 2>/dev/null || git remote set-url mirror "$TARGET"
-          git push mirror --all $FORCE_FLAG
-          git push mirror --tags $FORCE_FLAG
-        } |& tee -a "$LOG"
+              {
+                git remote add mirror "$TARGET" 2>/dev/null || git remote set-url mirror "$TARGET"
+                git push mirror --all $FORCE_FLAG
+                git push mirror --tags $FORCE_FLAG
+              } |& tee -a "$LOG"
 
-        # Cleanup SSH key
-        rm -f "$SSH_KEY_PATH"
+              # Export outputs
+              echo "target_url=$TARGET" >> "$GITHUB_OUTPUT"
 
-    - name: Summarize
-      if: always()
-      continue-on-error: true
-      shell: bash
-      run: |
-        S="$GITHUB_STEP_SUMMARY"
-        LOG="$RUNNER_TEMP/mirror.log"
+              # Cleanup SSH key
+              rm -f "$SSH_KEY_PATH"
 
-        REPO_IN="${{ inputs.repo }}"
-        REPO="${REPO_IN:-${GITHUB_REPOSITORY##*/}}"
+        - name: Summarize
+          if: always()
+          continue-on-error: true
+          shell: bash
+          run: |
+              S="$GITHUB_STEP_SUMMARY"
+              LOG="$RUNNER_TEMP/mirror.log"
 
-        USER_IN="${{ inputs.user }}"
-        USER="${USER_IN:-${GITHUB_REPOSITORY%/*}}"
+              REPO_IN="${{ inputs.repo }}"
+              REPO="${REPO_IN:-${GITHUB_REPOSITORY##*/}}"
 
-        TARGET="${{ inputs.host }}:${USER}/${REPO}.git"
+              USER_IN="${{ inputs.user }}"
+              USER="${USER_IN:-${GITHUB_REPOSITORY%/*}}"
 
-        if [ "${{ steps.mirror.outcome }}" = "success" ]; then
-          {
-            echo "✅ **Completed**.<br>_You can now access the repository at_ \`$TARGET\` 🥳"
-            echo
-            echo '<details><summary>Output</summary>'
-            echo
-            echo '```'
-            (tail -n 200 "$LOG" || true)
-            echo '```'
-            echo '</details>'
-          } >>"$S"
-        else
-          {
-            echo "❌ **Failed**.<br>_Because the mirror push did not complete successfully._"
-            echo
-            echo '```'
-            ([ -f "$LOG" ] && tail -n 200 "$LOG" || echo "No log output captured.")
-            echo '```'
-          } >>"$S"
-        fi
+              TARGET="${{ inputs.host }}:${USER}/${REPO}.git"
+
+              if [ "${{ steps.mirror.outcome }}" = "success" ]; then
+                {
+                  echo "✅ **Completed**.<br>_You can now access the repository at_ \`$TARGET\` 🥳"
+                  echo
+                  echo '<details><summary>Output</summary>'
+                  echo
+                  echo '```'
+                  (tail -n 200 "$LOG" || true)
+                  echo '```'
+                  echo '</details>'
+                } >>"$S"
+              else
+                {
+                  echo "❌ **Failed**.<br>_Because the mirror push did not complete successfully._"
+                  echo
+                  echo '```'
+                  ([ -f "$LOG" ] && tail -n 200 "$LOG" || echo "No log output captured.")
+                  echo '```'
+                } >>"$S"
+              fi

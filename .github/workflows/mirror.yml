@@ -1,0 +1,39 @@
+# This is an example usage of the repo-mirror-action
+#
+# To use, just click the "Run workflow" button!
+# You'll be presented with some optional inputs, for the mirror location
+# I am defining my destination (host, user, repo) defaults in GitHub secrets
+# But if these weren't specified, it'd use:
+#   git@codeberg.org/[current repo owner]/[current repo name]
+
+name: Mirror
+on:
+    schedule: [{ cron: "0 01 * * 0" }] # Run at 1 AM every Sunday
+    workflow_dispatch:
+        inputs:
+            host:
+                description: "SSH host (leave empty for Codeberg)"
+                required: false
+            user:
+                description: "Target user/org (leave empty for current repo owner)"
+                required: false
+            repo:
+                description: "Target repo name (leave empty for current repo name)"
+                required: false
+            force_push:
+                description: "Force push to overwrite remote"
+                required: false
+                type: boolean
+
+jobs:
+    mirror:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Mirror repository
+              uses: lissy93/repo-mirror-action@main
+              with:
+                  ssh_key: ${{ secrets.MIRROR_SSH }}
+                  host: ${{ inputs.host || secrets.MIRROR_HOST || '' }}
+                  user: ${{ inputs.user || secrets.MIRROR_USER || '' }}
+                  repo: ${{ inputs.repo || secrets.MIRROR_REPO || '' }}
+                  force_push: ${{ inputs.force_push || false }}
