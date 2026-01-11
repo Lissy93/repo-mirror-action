@@ -25,7 +25,7 @@ jobs:
       - uses: lissy93/mirror@v1
         with:
           ssh_key: ${{ secrets.MIRROR_SSH }}  # required! Your SSH private key as a secret
-          # host: git@github.com              # optional, defaults to Codeberg (git@codeberg.org)
+          # host: git@codeberg.org            # optional, defaults to Codeberg (git@codeberg.org)
           # user: your-user-or-org            # optional, defaults to your repo owner
           # repo: target-repo-name            # optional, defaults to your repo name
           # force_push: false                 # optional, force push to overwrite remote (default: false)
@@ -46,6 +46,14 @@ That’s it! The action will:
 | `user`       | ❌        | caller's repo owner | Target user/org (derived from context)           |
 | `repo`       | ❌        | caller's repo name  | Target repo name (derived from context)          |
 | `force_push` | ❌        | `false`             | Force push to overwrite remote history (caution) |
+
+## Outputs
+
+| name         | description                              | example                             |
+| ------------ | ---------------------------------------- | ----------------------------------- |
+| `target_url` | The target repository URL                | `git@codeberg.org:user/repo.git`    |
+| `success`    | Whether the mirror operation succeeded   | `true`                              |
+
 
 ---
 
@@ -158,7 +166,9 @@ Head to your repository's Actions tab. Click your new workflow (on the left), th
 
 ---
 
-## Example: force push to fix out-of-sync mirrors
+## More Examples
+
+### Force push to fix out-of-sync mirrors
 
 If your mirror gets out of sync, you can force push to overwrite the remote:
 
@@ -168,6 +178,83 @@ If your mirror gets out of sync, you can force push to overwrite the remote:
     ssh_key: ${{ secrets.MIRROR_SSH }}
     force_push: true  # ⚠️ Use with caution - overwrites remote history
 ```
+
+### Using outputs
+
+Chain the mirror action with other steps:
+
+```yaml
+- uses: lissy93/mirror@v1
+  id: mirror
+  with:
+    ssh_key: ${{ secrets.MIRROR_SSH }}
+- run: echo "Mirrored to ${{ steps.mirror.outputs.target_url }}"
+- name: Notify on success
+  if: steps.mirror.outputs.success == 'true'
+  run: curl -X POST ${{ secrets.WEBHOOK_URL }} -d "Mirror complete"
+```
+
+### Mirror to GitLab
+
+```yaml
+- uses: lissy93/mirror@v1
+  with:
+    ssh_key: ${{ secrets.GITLAB_SSH }}
+    host: git@gitlab.com
+    user: your-gitlab-username
+    repo: your-gitlab-project
+```
+
+### Mirror to self-hosted Gitea
+
+```yaml
+- uses: lissy93/mirror@v1
+  with:
+    ssh_key: ${{ secrets.GITEA_SSH }}
+    host: git@git.example.com
+    user: myorg
+    repo: myproject
+```
+
+### Mirror with user-specified settings
+
+When you run the following workflow, GitHub will popup with a little form, which you can then fill in to specify the target repo settings.
+
+```yaml
+name: Mirror to Somewhere
+
+on:
+  workflow_dispatch:
+    inputs:
+        host:
+          description: "SSH host (leave empty for Codeberg)"
+          required: false
+        user:
+          description: "Target user/org (leave empty for current repo owner)"
+          required: false
+        repo:
+          description: "Target repo name (leave empty for current repo name)"
+          required: false
+        force_push:
+          description: "Force push to overwrite remote"
+          required: false
+          type: boolean
+
+jobs:
+  test-mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mirror
+        uses: lissy93/repo-mirror-action@main
+        with:
+          ssh_key: ${{ secrets.MIRROR_SSH_TEST }}
+          host: ${{ inputs.host || 'git@codeberg.org' }}
+          user: ${{ inputs.user || github.repository_owner }}
+          repo: ${{ inputs.repo || github.repository }}
+          force_push: ${{ inputs.force_push || false }}
+```
+
+---
 
 ## Versioning
 
@@ -181,6 +268,63 @@ I'll keep `v1` pointing to the latest compatible release.
 
 ---
 
+## Security
+
+See [SECURITY.md](SECURITY.md)
+
+---
+
+## Troubleshooting
+
+<details>
+<summary>Permission denied (publickey)</summary>
+
+- Ensure the SSH public key is added to the target host with write access
+- Verify the private key matches the public key
+- Check the target repository exists
+</details>
+
+<details>
+<summary>Permission denied (publickey)"</summary>
+
+- Ensure the SSH public key is added to the target host with write access
+- Verify the private key matches the public key
+- Check the target repository exists
+</details>
+
+
+<details>
+<summary>Failed to retrieve SSH host keys</summary>
+
+- Network issue or invalid hostname
+- Try manually: `ssh-keyscan your-host.com`
+- Check firewall/proxy settings
+<details>
+
+
+**"Repository not found"**
+- Create the destination repository first on the target host
+- Verify user/org and repo names are correct
+
+**"fatal: refusing to merge unrelated histories"**
+- The repos have diverged
+- Use `force_push: true` to overwrite (⚠️ caution)
+
+**"Out of sync" errors**
+- Enable `force_push: true` to reset the mirror
+- Or manually fix the remote repository
+
+---
+
+## Limitations
+
+- Only supports SSH authentication (not HTTPS/tokens)
+- Requires target repository to exist beforehand
+- Large repositories (>1GB) may take longer to mirror
+- Rate limits depend on your target git host
+- Cannot mirror GitHub-specific features (Issues, PRs, Actions)
+
+---
 
 ## Attributions
 
