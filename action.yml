@@ -1,0 +1,99 @@
+name: "Mirror repository to alternate git host"
+description: "Push --all and --tags to a target SSH remote (e.g. Codeberg). Includes a tidy job summary."
+author: "Alicia Sykes (lissy93)"
+branding:
+  icon: "send"
+  color: "blue"
+
+inputs:
+  ssh_key:
+    description: "SSH private key with write access to the target repo"
+    required: true
+  host:
+    description: "SSH host (e.g. git@codeberg.org)"
+    default: "git@codeberg.org"
+    required: false
+  user:
+    description: "Target user/org. Default = caller's repo owner"
+    required: false
+    default: ""
+  repo:
+    description: "Target repo name. Default = caller's repo name"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Mirror
+      id: mirror
+      shell: bash
+      run: |
+        set -euo pipefail
+        LOG="$RUNNER_TEMP/mirror.log"
+
+        # Defaults: derive owner and repo from caller's context
+        REPO_IN="${{ inputs.repo }}"
+        REPO="${REPO_IN:-${GITHUB_REPOSITORY##*/}}"
+
+        USER_IN="${{ inputs.user }}"
+        USER="${USER_IN:-${GITHUB_REPOSITORY%/*}}"
+
+        TARGET="${{ inputs.host }}:${USER}/${REPO}.git"
+
+        # Derive plain host for known_hosts (handles ssh://git@host:port)
+        HOST="${{ inputs.host }}"
+        HOST="${HOST#*://}"; HOST="${HOST#*@}"; HOST="${HOST%%:*}"
+
+        mkdir -p ~/.ssh
+        printf '%s' "${{ inputs.ssh_key }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+        {
+          git remote add mirror "$TARGET" 2>/dev/null || true
+          git push mirror --all
+          git push mirror --tags
+        } |& tee "$LOG"
+
+    - name: Summarize
+      if: always()
+      continue-on-error: true
+      shell: bash
+      run: |
+        S="$GITHUB_STEP_SUMMARY"
+        LOG="$RUNNER_TEMP/mirror.log"
+
+        REPO_IN="${{ inputs.repo }}"
+        REPO="${REPO_IN:-${GITHUB_REPOSITORY##*/}}"
+
+        USER_IN="${{ inputs.user }}"
+        USER="${USER_IN:-${GITHUB_REPOSITORY%/*}}"
+
+        TARGET="${{ inputs.host }}:${USER}/${REPO}.git"
+
+        if [ "${{ steps.mirror.outcome }}" = "success" ]; then
+          {
+            echo "✅ **Completed**.<br>_You can now access the repository at_ \`$TARGET\` 🥳"
+            echo
+            echo '<details><summary>Output</summary>'
+            echo
+            echo '```'
+            (tail -n 200 "$LOG" || true)
+            echo '```'
+            echo '</details>'
+          } >>"$S"
+        else
+          {
+            echo "❌ **Failed**.<br>_Because the mirror push did not complete successfully._"
+            echo
+            echo '```'
+            ([ -f "$LOG" ] && tail -n 200 "$LOG" || echo "No log output captured.")
+            echo '```'
+          } >>"$S"
+        fi
