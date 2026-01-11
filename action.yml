@@ -88,16 +88,17 @@ runs:
         # Configure git to use our SSH key
         export GIT_SSH_COMMAND="ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=yes"
 
-        # Build push command with optional force flag
-        PUSH_OPTS="--all --tags"
+        # Setup force flag if enabled
+        FORCE_FLAG=""
         if [ "${{ inputs.force_push }}" = "true" ]; then
-          PUSH_OPTS="--force $PUSH_OPTS"
+          FORCE_FLAG="--force"
           echo "⚠️  Force push enabled - remote history may be overwritten" | tee -a "$LOG"
         fi
 
         {
           git remote add mirror "$TARGET" 2>/dev/null || git remote set-url mirror "$TARGET"
-          git push mirror $PUSH_OPTS
+          git push mirror --all $FORCE_FLAG
+          git push mirror --tags $FORCE_FLAG
         } |& tee -a "$LOG"
 
         # Cleanup SSH key
