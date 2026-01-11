@@ -1,0 +1,95 @@
+name: Release
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - "action.yml"
+    workflow_dispatch:
+        inputs:
+            version:
+                description: "Version to release (e.g., 1.2.3, 1.2, or 1). Leave empty to auto-bump minor."
+                required: false
+
+permissions:
+    contents: write
+
+jobs:
+    release:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Determine version
+              id: get_tag
+              run: |
+                  # Get latest version tag (v*.*.*)
+                  LATEST=$(git tag -l "v[0-9]*.[0-9]*.[0-9]*" | sort -V | tail -n1)
+
+                  # If manual version provided, use it
+                  if [ -n "${{ inputs.version }}" ]; then
+                    INPUT="${{ inputs.version }}"
+                    # Remove 'v' prefix if present
+                    INPUT="${INPUT#v}"
+
+                    # Parse input version (support 1, 1.2, or 1.2.3 format)
+                    IFS='.' read -r MAJOR MINOR PATCH <<< "$INPUT"
+                    MAJOR="${MAJOR:-1}"
+                    MINOR="${MINOR:-0}"
+                    PATCH="${PATCH:-0}"
+
+                    # Validate numbers
+                    if ! [[ "$MAJOR" =~ ^[0-9]+$ ]] || ! [[ "$MINOR" =~ ^[0-9]+$ ]] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
+                      echo "ERROR: Invalid version format. Use: 1.2.3, 1.2, or 1"
+                      exit 1
+                    fi
+
+                    NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+                    MAJOR_TAG="v${MAJOR}"
+
+                  # Auto-bump if no manual version
+                  elif [ -z "$LATEST" ]; then
+                    NEW_VERSION="v1.0.0"
+                    MAJOR_TAG="v1"
+                  else
+                    # Extract version parts and bump minor
+                    LATEST="${LATEST#v}"
+                    IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
+                    MINOR=$((MINOR + 1))
+                    NEW_VERSION="v${MAJOR}.${MINOR}.0"
+                    MAJOR_TAG="v${MAJOR}"
+                  fi
+
+                  # Check if tag already exists
+                  if git rev-parse "$NEW_VERSION" >/dev/null 2>&1; then
+                    echo "ERROR: Tag $NEW_VERSION already exists!"
+                    exit 1
+                  fi
+
+                  echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+                  echo "major_tag=$MAJOR_TAG" >> "$GITHUB_OUTPUT"
+                  echo "📦 New version: $NEW_VERSION (major: $MAJOR_TAG)"
+
+            - name: Create and push tags
+              run: |
+                  git config user.name "liss-bot"
+                  git config user.email "alicia-gh-bot@mail.as93.net"
+
+                  # Create version tag
+                  git tag -a "${{ steps.get_tag.outputs.new_version }}" -m "Release ${{ steps.get_tag.outputs.new_version }}"
+                  git push origin "${{ steps.get_tag.outputs.new_version }}"
+
+                  # Move major version tag
+                  git tag -fa "${{ steps.get_tag.outputs.major_tag }}" -m "Update ${{ steps.get_tag.outputs.major_tag }} to ${{ steps.get_tag.outputs.new_version }}"
+                  git push origin "${{ steps.get_tag.outputs.major_tag }}" --force
+
+            - name: Create GitHub Release
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  gh release create "${{ steps.get_tag.outputs.new_version }}" \
+                    --title "${{ steps.get_tag.outputs.new_version }}" \
+                    --generate-notes \
+                    --verify-tag

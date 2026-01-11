@@ -268,9 +268,15 @@ I'll keep `v1` pointing to the latest compatible release.
 
 ---
 
+## Contributing
+
+See [Contributing Guide](CONTRIBUTING.md)
+
+---
+
 ## Security
 
-See [SECURITY.md](SECURITY.md)
+See [Security Guide](SECURITY.md)
 
 ---
 
@@ -299,20 +305,30 @@ See [SECURITY.md](SECURITY.md)
 - Network issue or invalid hostname
 - Try manually: `ssh-keyscan your-host.com`
 - Check firewall/proxy settings
+</details>
+
+
 <details>
-
-
-**"Repository not found"**
+<summary>Repository not found</summary>
 - Create the destination repository first on the target host
 - Verify user/org and repo names are correct
 
-**"fatal: refusing to merge unrelated histories"**
+</details>
+
+<details>
+<summary>fatal: refusing to merge unrelated histories</summary>
+
 - The repos have diverged
 - Use `force_push: true` to overwrite (⚠️ caution)
+</details>
 
-**"Out of sync" errors**
+
+<details>
+<summary>Out of sync" errors</summary>
+
 - Enable `force_push: true` to reset the mirror
 - Or manually fix the remote repository
+</details>
 
 ---
 
