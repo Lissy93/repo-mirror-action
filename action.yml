@@ -21,6 +21,10 @@ inputs:
     description: "Target repo name. Default = caller's repo name"
     required: false
     default: ""
+  force_push:
+    description: "Force push to overwrite remote history (use with caution)"
+    required: false
+    default: "false"
 
 runs:
   using: "composite"
@@ -33,9 +37,22 @@ runs:
     - name: Mirror
       id: mirror
       shell: bash
+      env:
+        SSH_KEY: ${{ inputs.ssh_key }}
       run: |
         set -euo pipefail
         LOG="$RUNNER_TEMP/mirror.log"
+
+        # Input validation
+        if [ -z "$SSH_KEY" ]; then
+          echo "ERROR: ssh_key input is required" | tee "$LOG"
+          exit 1
+        fi
+
+        if ! printf '%s' "$SSH_KEY" | grep -q "BEGIN.*PRIVATE KEY"; then
+          echo "ERROR: ssh_key does not appear to be a valid SSH private key" | tee "$LOG"
+          exit 1
+        fi
 
         # Defaults: derive owner and repo from caller's context
         REPO_IN="${{ inputs.repo }}"
@@ -50,16 +67,41 @@ runs:
         HOST="${{ inputs.host }}"
         HOST="${HOST#*://}"; HOST="${HOST#*@}"; HOST="${HOST%%:*}"
 
+        if [ -z "$HOST" ]; then
+          echo "ERROR: Could not parse host from: ${{ inputs.host }}" | tee "$LOG"
+          exit 1
+        fi
+
+        # Setup SSH with unique key location to avoid conflicts
+        SSH_KEY_PATH="$RUNNER_TEMP/mirror_ssh_$$"
         mkdir -p ~/.ssh
-        printf '%s' "${{ inputs.ssh_key }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+        printf '%s' "$SSH_KEY" > "$SSH_KEY_PATH"
+        chmod 600 "$SSH_KEY_PATH"
+
+        # Scan host keys securely - fail if unable to verify
+        echo "Scanning SSH host keys for: $HOST" | tee "$LOG"
+        if ! ssh-keyscan -H "$HOST" 2>&1 | tee -a "$LOG" >> ~/.ssh/known_hosts; then
+          echo "ERROR: Failed to retrieve SSH host keys from $HOST" | tee -a "$LOG"
+          exit 1
+        fi
+
+        # Configure git to use our SSH key
+        export GIT_SSH_COMMAND="ssh -i $SSH_KEY_PATH -o StrictHostKeyChecking=yes"
+
+        # Build push command with optional force flag
+        PUSH_OPTS="--all --tags"
+        if [ "${{ inputs.force_push }}" = "true" ]; then
+          PUSH_OPTS="--force $PUSH_OPTS"
+          echo "⚠️  Force push enabled - remote history may be overwritten" | tee -a "$LOG"
+        fi
 
         {
-          git remote add mirror "$TARGET" 2>/dev/null || true
-          git push mirror --all
-          git push mirror --tags
-        } |& tee "$LOG"
+          git remote add mirror "$TARGET" 2>/dev/null || git remote set-url mirror "$TARGET"
+          git push mirror $PUSH_OPTS
+        } |& tee -a "$LOG"
+
+        # Cleanup SSH key
+        rm -f "$SSH_KEY_PATH"
 
     - name: Summarize
       if: always()
