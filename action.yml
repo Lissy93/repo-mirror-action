@@ -2,8 +2,8 @@ name: "Mirror repository to alternate git host"
 description: "Push --all and --tags to a target SSH remote (e.g. Codeberg). Includes a tidy job summary."
 author: "Alicia Sykes (lissy93)"
 branding:
-    icon: "send"
-    color: "blue"
+    icon: "git-branch"
+    color: "green"
 
 inputs:
     ssh_key:

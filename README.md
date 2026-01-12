@@ -15,14 +15,14 @@ Why? Because backups are important. Decentralization is healthy. And vendor lock
 name: Mirror
 on:
   schedule: [{ cron: '30 01 * * 0' }] # Choose a frequency (e.g. mirror every Sunday at 01:30)
-  push: { tags: ['v*'] }
-  workflow_dispatch:
+  push: { tags: ['v*'] }              # Or publish whenever a new version (tag) is crearted
+  workflow_dispatch:                  # And, enable the workflow to also be manually triggered
 
 jobs:
   mirror:
     runs-on: ubuntu-latest
     steps:
-      - uses: lissy93/mirror@v1
+      - uses: lissy93/repo-mirror-action@v1
         with:
           ssh_key: ${{ secrets.MIRROR_SSH }}  # required! Your SSH private key as a secret
           # host: git@codeberg.org            # optional, defaults to Codeberg (git@codeberg.org)
@@ -62,6 +62,19 @@ That’s it! The action will:
 Git mirroring copies your entire repository to another location. It's useful for backups, avoiding vendor lock-in, or keeping repos in sync across platforms.
 
 The action runs on a schedule (like weekly) or when triggered (like on new tags). It checks out your repo with full history, authenticates, then safely pushes everything to your target git host. All branches, commits, and tags from your source repo get pushed to the mirror destination. No changes will be made to your source repo.
+
+---
+
+## Why it's needed
+
+- To keep a backup of your repository in case something goes wrong with GitHub
+- To give your users an alternative (non-Microsoft) way to access your code
+- To reduce vendor lock-in, so you can switch to another hosting service if needed
+- To keep your repository in sync across platforms, such as GitHub and self-hosted GitLab
+
+> [!TIP]
+> For example, I have mirrored my projects over to Codeberg, at [codeberg.org/alicia](https://codeberg.org/alicia)<br>
+> Now, anyone can get these apps, without needing to use Microsoft services 😇
 
 ---
 
@@ -173,7 +186,7 @@ Head to your repository's Actions tab. Click your new workflow (on the left), th
 If your mirror gets out of sync, you can force push to overwrite the remote:
 
 ```yaml
-- uses: lissy93/mirror@v1
+- uses: lissy93/repo-mirror-action@v1
   with:
     ssh_key: ${{ secrets.MIRROR_SSH }}
     force_push: true  # ⚠️ Use with caution - overwrites remote history
@@ -184,7 +197,7 @@ If your mirror gets out of sync, you can force push to overwrite the remote:
 Chain the mirror action with other steps:
 
 ```yaml
-- uses: lissy93/mirror@v1
+- uses: lissy93/repo-mirror-action@v1
   id: mirror
   with:
     ssh_key: ${{ secrets.MIRROR_SSH }}
@@ -197,7 +210,7 @@ Chain the mirror action with other steps:
 ### Mirror to GitLab
 
 ```yaml
-- uses: lissy93/mirror@v1
+- uses: lissy93/repo-mirror-action@v1
   with:
     ssh_key: ${{ secrets.GITLAB_SSH }}
     host: git@gitlab.com
@@ -208,7 +221,7 @@ Chain the mirror action with other steps:
 ### Mirror to self-hosted Gitea
 
 ```yaml
-- uses: lissy93/mirror@v1
+- uses: lissy93/repo-mirror-action@v1
   with:
     ssh_key: ${{ secrets.GITEA_SSH }}
     host: git@git.example.com
@@ -261,7 +274,7 @@ jobs:
 Use a major tag for stability:
 
 ```yaml
-- uses: lissy93/mirror@v1
+- uses: lissy93/repo-mirror-action@v1
 ```
 
 I'll keep `v1` pointing to the latest compatible release.
@@ -270,13 +283,13 @@ I'll keep `v1` pointing to the latest compatible release.
 
 ## Contributing
 
-See [Contributing Guide](CONTRIBUTING.md)
+See [Contributing Guide](.github/CONTRIBUTING.md)
 
 ---
 
 ## Security
 
-See [Security Guide](SECURITY.md)
+See [Security Guide](.github/SECURITY.md)
 
 ---
 
