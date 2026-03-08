@@ -1,5 +1,5 @@
-name: "Mirror repository to alternate git host"
-description: "Push --all and --tags to a target SSH remote (e.g. Codeberg). Includes a tidy job summary."
+name: "Magic Mirror - Repo backup/mirror to alternate git host"
+description: "A git mirror workflow, to push --all and --tags to a target SSH remote (e.g. Codeberg). Includes a tidy job summary."
 author: "Alicia Sykes (lissy93)"
 branding:
     icon: "git-branch"
@@ -83,7 +83,7 @@ runs:
               # Setup SSH with unique key location to avoid conflicts
               SSH_KEY_PATH="$RUNNER_TEMP/mirror_ssh_$$"
               mkdir -p ~/.ssh
-              printf '%s' "$SSH_KEY" > "$SSH_KEY_PATH"
+              printf '%s\n' "$SSH_KEY" > "$SSH_KEY_PATH"
               chmod 600 "$SSH_KEY_PATH"
 
               # Scan host keys securely - fail if unable to verify
@@ -143,11 +143,38 @@ runs:
                   echo '</details>'
                 } >>"$S"
               else
+                # Diagnose common failures from log output
+                HINT=""
+                if [ -f "$LOG" ]; then
+                  if grep -qE "error in libcrypto|invalid format" "$LOG"; then
+                    HINT="The SSH private key appears malformed. Re-copy it — including the BEGIN/END lines — with no extra whitespace."
+                  elif grep -q "Permission denied" "$LOG"; then
+                    HINT="The SSH key was rejected by the remote host. Check that the **public** key is added to your target account."
+                  elif grep -q "Could not resolve hostname" "$LOG"; then
+                    HINT="DNS lookup failed for the remote host. Double-check the \`host\` input value."
+                  elif grep -q "Connection refused" "$LOG"; then
+                    HINT="The remote host refused the SSH connection. Verify the host and port are correct."
+                  elif grep -qE "Connection timed out|Network is unreachable" "$LOG"; then
+                    HINT="SSH connection timed out or the network is unreachable. The remote host may be down or blocked by a firewall."
+                  elif grep -q "does not appear to be a git repository" "$LOG"; then
+                    HINT="The target repository does not exist on the remote. Create it first, then re-run."
+                  elif grep -q "non-fast-forward" "$LOG"; then
+                    HINT="The remote has commits not present locally. Set \`force_push: true\` if you want to overwrite, or pull first."
+                  elif grep -q "Host key verification failed" "$LOG"; then
+                    HINT="SSH host-key verification failed. This may indicate a network issue or MITM."
+                  fi
+                fi
+
                 {
                   echo "❌ **Failed**.<br>_Because the mirror push did not complete successfully._"
+                  if [ -n "$HINT" ]; then
+                    echo
+                    echo "> [!TIP]"
+                    echo "> $HINT"
+                  fi
                   echo
                   echo '```'
-                  ([ -f "$LOG" ] && tail -n 200 "$LOG" || echo "No log output captured.")
+                  [ -f "$LOG" ] && tail -n 200 "$LOG" || echo "No log output captured."
                   echo '```'
                 } >>"$S"
               fi
