@@ -147,21 +147,23 @@ runs:
                 HINT=""
                 if [ -f "$LOG" ]; then
                   if grep -qE "error in libcrypto|invalid format" "$LOG"; then
-                    HINT="The SSH private key appears malformed. Re-copy it — including the BEGIN/END lines — with no extra whitespace."
+                    HINT="Your SSH key looks corrupted. Re-copy it into your repo secret, including the BEGIN/END lines, with no extra whitespace."
                   elif grep -q "Permission denied" "$LOG"; then
-                    HINT="The SSH key was rejected by the remote host. Check that the **public** key is added to your target account."
+                    HINT="The remote rejected your SSH key. Make sure the matching **public** key is added to your account on the target host."
                   elif grep -q "Could not resolve hostname" "$LOG"; then
-                    HINT="DNS lookup failed for the remote host. Double-check the \`host\` input value."
+                    HINT="Couldn't find that host. Double-check the \`host\` input — is it spelled correctly?"
                   elif grep -q "Connection refused" "$LOG"; then
-                    HINT="The remote host refused the SSH connection. Verify the host and port are correct."
-                  elif grep -qE "Connection timed out|Network is unreachable" "$LOG"; then
-                    HINT="SSH connection timed out or the network is unreachable. The remote host may be down or blocked by a firewall."
-                  elif grep -q "does not appear to be a git repository" "$LOG"; then
-                    HINT="The target repository does not exist on the remote. Create it first, then re-run."
-                  elif grep -q "non-fast-forward" "$LOG"; then
-                    HINT="The remote has commits not present locally. Set \`force_push: true\` if you want to overwrite, or pull first."
+                    HINT="Connection was refused. The host or port is probably wrong."
+                  elif grep -qE "Connection timed out|Network is unreachable|No route to host" "$LOG"; then
+                    HINT="Can't reach the remote host. It might be down, or a firewall could be blocking GitHub's runners."
+                  elif grep -qE "does not appear to be a git repository|Repository not found" "$LOG"; then
+                    HINT="That repo doesn't exist on the remote yet. Create it there first, then re-run this workflow."
+                  elif grep -qE "tag already exists|non-fast-forward" "$LOG"; then
+                    HINT="The remote has branches or tags that conflict with yours. Set \`force_push: true\` to overwrite them."
                   elif grep -q "Host key verification failed" "$LOG"; then
-                    HINT="SSH host-key verification failed. This may indicate a network issue or MITM."
+                    HINT="SSH host key didn't match. This is unusual — could be a network issue or a misconfigured server."
+                  elif grep -q "kex_exchange_identification" "$LOG"; then
+                    HINT="SSH handshake was cut short. The remote might be rate-limiting or blocking GitHub's IP range."
                   fi
                 fi
 
